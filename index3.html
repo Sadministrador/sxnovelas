@@ -29,7 +29,7 @@
     padding-bottom:24px;
   }
   .cover-slot{
-    width:110px;height:150px;flex-shrink:0;
+    width:160px;height:220px;flex-shrink:0;
     border:1px dashed var(--line);
     border-radius:4px;
     background:var(--panel);
@@ -37,7 +37,7 @@
     cursor:pointer;overflow:hidden;position:relative;
   }
   .cover-slot img{width:100%;height:100%;object-fit:cover;}
-  .cover-slot .hint{font-size:11px;color:var(--ink-dim);text-align:center;padding:8px;font-family:'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;}
+  .cover-slot .hint{font-size:12px;color:var(--ink-dim);text-align:center;padding:8px;font-family:'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;}
   .cover-input{display:none;}
 
   .title-block{flex:1;}
@@ -64,8 +64,8 @@
 
   .grid{
     display:grid;
-    grid-template-columns:repeat(auto-fill, minmax(150px,1fr));
-    gap:14px;
+    grid-template-columns:repeat(auto-fill, minmax(200px,1fr));
+    gap:18px;
   }
   .slot{
     background:var(--panel);
@@ -105,6 +105,18 @@
     font-size:26px;color:var(--ink-dim);font-family:'Helvetica Neue',Arial,sans-serif;font-weight:200;
   }
   .slot input[type=file]{display:none;}
+
+  .slot .uploading-body{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;padding:10px;
+  }
+  .slot .uploading-body .upl-label{
+    font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;color:var(--ink-dim);
+  }
+  .slot .upl-bar{
+    width:80%;height:3px;background:var(--panel-2);border-radius:2px;overflow:hidden;
+  }
+  .slot .upl-bar > div{height:100%;background:var(--accent);transition:width .2s ease;}
 
   .slot .thumb{
     flex:1;background:linear-gradient(155deg, var(--panel-2), #262b3a);
@@ -171,6 +183,24 @@
     display:none;font-family:'Helvetica Neue',Arial,sans-serif;
     font-size:13px;color:var(--done);margin-top:8px;
   }
+
+  @media (max-width: 640px){
+    .top{
+      flex-direction:column;
+      align-items:flex-start;
+    }
+    .cover-slot{
+      width:220px;height:300px;
+    }
+    .title-block{width:100%;}
+    .progressbar{width:100%;}
+    .grid{
+      grid-template-columns:repeat(2, 1fr);
+      gap:14px;
+    }
+    h1{font-size:28px;}
+    .eyebrow{font-size:22px;}
+  }
 </style>
 
 <div class="wrap">
@@ -191,9 +221,10 @@
   <div class="grid" id="grid"></div>
 
   <div class="footer-note">
-    Os arquivos de vídeo em si só ficam disponíveis durante esta sessão do navegador —
-    ao recarregar a página, você precisará selecionar o arquivo novamente para tocar.
-    Títulos, capa e o progresso de "assistido" ficam salvos.
+    Os vídeos ficam salvos direto neste aparelho (sem passar por nenhuma nuvem) —
+    depois de carregado uma vez, o episódio toca aqui mesmo se desligar e ligar o aparelho, sem precisar reenviar.
+    Se você abrir esta página em outro aparelho (celular, outro PC), precisará carregar o vídeo de novo lá,
+    pois o arquivo não sincroniza entre aparelhos — só o título, a capa e o status de "assistido" sincronizam.
   </div>
 </div>
 
@@ -222,8 +253,59 @@ const dbRef = db.ref('biblioteca_pessoal');
 const TOTAL = 198;
 let meta = { title: 'Meu título aqui', cover: null, items: {} };
 // items[n] = { name: 'nome do episódio', watched: bool, thumb: 'dataURL' }
+// O vídeo em si NÃO fica aqui — fica salvo localmente no IndexedDB deste aparelho.
 
-let objectUrls = {}; // session-only: n -> object URL of the loaded video file
+let localVideoKeys = new Set(); // n's que têm vídeo salvo localmente neste aparelho
+let savingLocally = new Set();  // n's que estão sendo salvos no IndexedDB agora
+
+// pede ao navegador pra não apagar esse armazenamento sob pressão de espaço
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persist().catch(()=>{});
+}
+
+const IDB_NAME = 'sxBibliotecaVideos';
+const IDB_STORE = 'videos';
+
+function idbOpen(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(n, blob){
+  const dbLocal = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = dbLocal.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(blob, n);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(n){
+  const dbLocal = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = dbLocal.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(n);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbAllKeys(){
+  const dbLocal = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = dbLocal.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).getAllKeys();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
 
 async function loadMeta(){
   try{
@@ -260,8 +342,8 @@ function render(){
 
   for(let n=1; n<=TOTAL; n++){
     const item = meta.items[n] || {};
-    const hasFile = !!objectUrls[n];
-    const isFilled = hasFile || !!item.name;
+    const isSaving = savingLocally.has(n);
+    const isFilled = localVideoKeys.has(n);
     const isWatched = !!item.watched;
     if(isFilled) filled++;
     if(isWatched) watched++;
@@ -271,7 +353,16 @@ function render(){
 
     const label = item.name || `Episódio ${n}`;
 
-    if(!isFilled){
+    if(isSaving){
+      slot.innerHTML = `
+        <div class="num">${String(n).padStart(3,'0')}</div>
+        <div class="uploading-body">
+          <span class="upl-label">Salvando neste aparelho…</span>
+          <div class="upl-bar"><div style="width:100%"></div></div>
+        </div>
+        <div class="cap">Episódio ${n}</div>
+      `;
+    } else if(!isFilled){
       slot.innerHTML = `
         <div class="num">${String(n).padStart(3,'0')}</div>
         <label class="empty-body">
@@ -328,29 +419,52 @@ function captureThumbnail(url){
 async function handleUpload(n, e){
   const file = e.target.files[0];
   if(!file) return;
-  const url = URL.createObjectURL(file);
-  objectUrls[n] = url;
+
+  const localUrl = URL.createObjectURL(file);
+
   if(!meta.items[n]) meta.items[n] = {};
   meta.items[n].name = file.name.replace(/\.[^/.]+$/, '');
-  saveMeta();
+
+  savingLocally.add(n);
   render();
 
-  const thumb = await captureThumbnail(url);
-  if(thumb){
-    meta.items[n].thumb = thumb;
+  try{
+    const [thumb] = await Promise.all([
+      captureThumbnail(localUrl),
+      idbPut(n, file)
+    ]);
+
+    if(thumb) meta.items[n].thumb = thumb;
+    localVideoKeys.add(n);
+
+    savingLocally.delete(n);
     saveMeta();
     render();
+  }catch(err){
+    console.error('erro ao salvar localmente', err);
+    savingLocally.delete(n);
+    alert('Não foi possível salvar o vídeo neste aparelho. Pode ser falta de espaço de armazenamento.');
+    render();
+  }finally{
+    URL.revokeObjectURL(localUrl);
   }
 }
 
-function openPlayer(n, label){
+async function openPlayer(n, label){
   const overlay = document.getElementById('playerOverlay');
   const video = document.getElementById('playerVideo');
-  const url = objectUrls[n];
-  if(!url){
-    alert('O arquivo desse episódio não está carregado nesta sessão. Selecione o arquivo novamente.');
+
+  let blob;
+  try{
+    blob = await idbGet(n);
+  }catch(err){
+    console.error('erro ao ler vídeo local', err);
+  }
+  if(!blob){
+    alert('O vídeo desse episódio não está salvo neste aparelho. Carregue o arquivo novamente aqui.');
     return;
   }
+  const url = URL.createObjectURL(blob);
   video.src = url;
   video.controls = false;
   document.getElementById('playerLabel').innerText = label;
@@ -359,8 +473,13 @@ function openPlayer(n, label){
 
   const goFullscreen = () => {
     const el = overlay;
-    if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
-    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    const request = el.requestFullscreen ? el.requestFullscreen() :
+                    (el.webkitRequestFullscreen ? Promise.resolve(el.webkitRequestFullscreen()) : Promise.resolve());
+    Promise.resolve(request).then(() => {
+      if(screen.orientation && screen.orientation.lock){
+        screen.orientation.lock('landscape').catch(()=>{ /* nem todo navegador permite (ex: iOS Safari) */ });
+      }
+    }).catch(()=>{});
   };
   goFullscreen();
 
@@ -369,8 +488,10 @@ function openPlayer(n, label){
     meta.items[n].watched = true;
     saveMeta();
     render();
+    if(screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
     if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
     overlay.classList.remove('open');
+    URL.revokeObjectURL(video.src);
     video.src = '';
   };
 }
@@ -379,8 +500,10 @@ document.getElementById('playerClose').addEventListener('click', ()=>{
   const overlay = document.getElementById('playerOverlay');
   const video = document.getElementById('playerVideo');
   video.pause();
+  if(video.src) URL.revokeObjectURL(video.src);
   video.src = '';
   overlay.classList.remove('open');
+  if(screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
   if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
 });
 
@@ -410,6 +533,12 @@ document.addEventListener('change', (e)=>{
 
 (async () => {
   await loadMeta();
+  try{
+    const keys = await idbAllKeys();
+    localVideoKeys = new Set(keys);
+  }catch(err){
+    console.error('erro ao ler chaves locais', err);
+  }
   render();
 })();
 </script>
