@@ -1,0 +1,415 @@
+<style>
+  :root{
+    --bg: #10131a;
+    --panel: #171b24;
+    --panel-2: #1e2330;
+    --line: #2a2f3d;
+    --ink: #eae7df;
+    --ink-dim: #8a90a3;
+    --accent: #e0a458;
+    --accent-dim: #7a5a30;
+    --done: #4f7a5f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    margin:0;
+    padding:0;
+  }
+  .wrap{max-width:1100px;margin:0 auto;padding:32px 20px 80px;}
+
+  .top{
+    display:flex;
+    align-items:flex-end;
+    gap:24px;
+    margin-bottom:28px;
+    border-bottom:1px solid var(--line);
+    padding-bottom:24px;
+  }
+  .cover-slot{
+    width:110px;height:150px;flex-shrink:0;
+    border:1px dashed var(--line);
+    border-radius:4px;
+    background:var(--panel);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;overflow:hidden;position:relative;
+  }
+  .cover-slot img{width:100%;height:100%;object-fit:cover;}
+  .cover-slot .hint{font-size:11px;color:var(--ink-dim);text-align:center;padding:8px;font-family:'Helvetica Neue',Arial,sans-serif;letter-spacing:.03em;}
+  .cover-input{display:none;}
+
+  .title-block{flex:1;}
+  .eyebrow{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:26px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:8px;font-weight:800;
+  }
+  h1{
+    margin:0 0 8px;font-size:34px;font-weight:400;letter-spacing:.01em;
+  }
+  h1[contenteditable]{outline:none;border-bottom:1px solid transparent;}
+  h1[contenteditable]:focus{border-bottom:1px solid var(--accent);}
+  .stat{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:13px;color:var(--ink-dim);
+  }
+  .stat b{color:var(--ink);}
+
+  .progressbar{
+    height:3px;background:var(--panel-2);border-radius:2px;overflow:hidden;margin-top:10px;width:280px;
+  }
+  .progressbar > div{height:100%;background:var(--accent);transition:width .4s ease;}
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(150px,1fr));
+    gap:14px;
+  }
+  .slot{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    aspect-ratio:2/3;
+    display:flex;flex-direction:column;
+    position:relative;overflow:hidden;
+    transition:border-color .2s ease;
+  }
+  .slot:hover{border-color:var(--accent-dim);}
+  .slot.filled{border-color:var(--line);}
+  .slot.watched{border-color:var(--done);background:#182019;}
+
+  .slot .num{
+    position:absolute;top:8px;left:9px;
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:11px;color:var(--ink-dim);letter-spacing:.05em;
+    z-index:2;
+  }
+  .slot.filled .num, .slot.watched .num{color:rgba(234,231,223,.55);}
+
+  .slot .badge{
+    position:absolute;top:8px;right:8px;z-index:3;
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 7px;border-radius:20px;background:var(--done);color:#0d140f;
+    display:none;font-weight:600;
+  }
+  .slot.watched .badge{display:block;}
+
+  .slot .empty-body{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+  }
+  .slot .empty-body .plus{
+    font-size:26px;color:var(--ink-dim);font-family:'Helvetica Neue',Arial,sans-serif;font-weight:200;
+  }
+  .slot input[type=file]{display:none;}
+
+  .slot .thumb{
+    flex:1;background:linear-gradient(155deg, var(--panel-2), #262b3a);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    background-size:cover;background-position:center;position:relative;
+  }
+  .slot .thumb .play{
+    width:0;height:0;
+    border-top:8px solid transparent;border-bottom:8px solid transparent;
+    border-left:13px solid rgba(234,231,223,.85);
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));
+    z-index:2;
+  }
+  .slot .thumb.has-image::before{
+    content:'';position:absolute;inset:0;background:rgba(0,0,0,.28);
+  }
+  .slot.watched .thumb .play{border-left-color:var(--done);}
+
+  .slot .cap{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:11px;color:var(--ink-dim);
+    padding:7px 9px;border-top:1px solid var(--line);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .slot.filled .cap, .slot.watched .cap{color:var(--ink);}
+
+  /* player overlay */
+  .player-overlay{
+    display:none;position:fixed;inset:0;background:#000;z-index:50;
+    align-items:center;justify-content:center;flex-direction:column;
+  }
+  .player-overlay.open{display:flex;}
+  .player-overlay video{max-width:100%;max-height:88vh;}
+  .player-overlay:fullscreen{padding:0;}
+  .player-overlay:fullscreen video{
+    width:100vw;height:100vh;max-width:100vw;max-height:100vh;object-fit:contain;
+  }
+  .player-overlay:-webkit-full-screen video{
+    width:100vw;height:100vh;max-width:100vw;max-height:100vh;object-fit:contain;
+  }
+  .player-overlay:fullscreen .player-close,
+  .player-overlay:fullscreen .player-label{
+    z-index:5;
+  }
+  .player-close{
+    position:absolute;top:18px;right:22px;
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    color:var(--ink-dim);font-size:13px;letter-spacing:.05em;
+    cursor:pointer;background:none;border:none;
+  }
+  .player-close:hover{color:var(--ink);}
+  .player-label{
+    font-family:'Helvetica Neue',Arial,sans-serif;
+    color:var(--ink-dim);font-size:12px;margin-top:14px;letter-spacing:.03em;
+  }
+
+  .footer-note{
+    margin-top:30px;font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:12px;color:var(--ink-dim);line-height:1.6;
+    border-top:1px solid var(--line);padding-top:16px;
+  }
+
+  .done-message{
+    display:none;font-family:'Helvetica Neue',Arial,sans-serif;
+    font-size:13px;color:var(--done);margin-top:8px;
+  }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <label class="cover-slot" id="coverSlot">
+      <span class="hint">capa</span>
+      <input class="cover-input" type="file" accept="image/*" id="coverInput">
+    </label>
+    <div class="title-block">
+      <div class="eyebrow">SX NOVELAS</div>
+      <h1 contenteditable="true" id="titleField">Meu título aqui</h1>
+      <div class="stat"><b id="filledCount">0</b> de 198 carregados · <b id="watchedCount">0</b> assistidos</div>
+      <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
+      <div class="done-message" id="doneMessage">Tudo carregado. O upload foi ocultado dos itens.</div>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="footer-note">
+    Os arquivos de vídeo em si só ficam disponíveis durante esta sessão do navegador —
+    ao recarregar a página, você precisará selecionar o arquivo novamente para tocar.
+    Títulos, capa e o progresso de "assistido" ficam salvos.
+  </div>
+</div>
+
+<div class="player-overlay" id="playerOverlay">
+  <button class="player-close" id="playerClose">FECHAR ✕</button>
+  <video id="playerVideo" autoplay></video>
+  <div class="player-label" id="playerLabel"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCXTQ932v0Amnbtha01BzFsUfUZKnwYQIA",
+  authDomain: "chofer-522be.firebaseapp.com",
+  databaseURL: "https://chofer-522be-default-rtdb.firebaseio.com",
+  projectId: "chofer-522be",
+  storageBucket: "chofer-522be.firebasestorage.app",
+  messagingSenderId: "81306033578",
+  appId: "1:81306033578:web:0c3688bc455a51b972dfd3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dbRef = db.ref('biblioteca_pessoal');
+
+const TOTAL = 198;
+let meta = { title: 'Meu título aqui', cover: null, items: {} };
+// items[n] = { name: 'nome do episódio', watched: bool, thumb: 'dataURL' }
+
+let objectUrls = {}; // session-only: n -> object URL of the loaded video file
+
+async function loadMeta(){
+  try{
+    const snap = await dbRef.once('value');
+    const val = snap.val();
+    if(val){
+      meta = Object.assign(meta, val);
+      if(!meta.items) meta.items = {};
+    }
+  }catch(e){ console.error('firebase load error', e); }
+}
+
+let saveTimer = null;
+function saveMeta(){
+  // debounce so rapid successive changes don't fire a write each time
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    dbRef.set(meta).catch(e => console.error('firebase save error', e));
+  }, 250);
+}
+</script>
+<script>
+
+function render(){
+  document.getElementById('titleField').innerText = meta.title || 'Meu título aqui';
+  const coverSlot = document.getElementById('coverSlot');
+  if(meta.cover){
+    coverSlot.innerHTML = `<img src="${meta.cover}"><input class="cover-input" type="file" accept="image/*" id="coverInput">`;
+  }
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  let filled = 0, watched = 0;
+
+  for(let n=1; n<=TOTAL; n++){
+    const item = meta.items[n] || {};
+    const hasFile = !!objectUrls[n];
+    const isFilled = hasFile || !!item.name;
+    const isWatched = !!item.watched;
+    if(isFilled) filled++;
+    if(isWatched) watched++;
+
+    const slot = document.createElement('div');
+    slot.className = 'slot' + (isFilled ? ' filled' : '') + (isWatched ? ' watched' : '');
+
+    const label = item.name || `Episódio ${n}`;
+
+    if(!isFilled){
+      slot.innerHTML = `
+        <div class="num">${String(n).padStart(3,'0')}</div>
+        <label class="empty-body">
+          <span class="plus">+</span>
+          <input type="file" accept="video/*" data-n="${n}">
+        </label>
+        <div class="cap">Episódio ${n}</div>
+      `;
+      slot.querySelector('input[type=file]').addEventListener('change', (e)=>handleUpload(n, e));
+    } else {
+      const thumbStyle = item.thumb ? ` style="background-image:url('${item.thumb}')"` : '';
+      const thumbClass = item.thumb ? ' has-image' : '';
+      slot.innerHTML = `
+        <div class="num">${String(n).padStart(3,'0')}</div>
+        <div class="badge">assistido</div>
+        <div class="thumb${thumbClass}"${thumbStyle}><div class="play"></div></div>
+        <div class="cap">${label}</div>
+      `;
+      slot.querySelector('.thumb').addEventListener('click', ()=>openPlayer(n, label));
+    }
+
+    grid.appendChild(slot);
+  }
+
+  document.getElementById('filledCount').innerText = filled;
+  document.getElementById('watchedCount').innerText = watched;
+  document.getElementById('progressFill').style.width = (filled/TOTAL*100) + '%';
+  document.getElementById('doneMessage').style.display = (filled >= TOTAL) ? 'block' : 'none';
+}
+
+function captureThumbnail(url){
+  return new Promise((resolve) => {
+    const tempVideo = document.createElement('video');
+    tempVideo.src = url;
+    tempVideo.muted = true;
+    tempVideo.playsInline = true;
+    tempVideo.addEventListener('loadeddata', () => {
+      tempVideo.currentTime = Math.min(1, (tempVideo.duration || 2) / 4);
+    });
+    tempVideo.addEventListener('seeked', () => {
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = 300;
+        canvas.height = Math.round(300 * (tempVideo.videoHeight / tempVideo.videoWidth || 1.5));
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      }catch(e){ resolve(null); }
+    });
+    tempVideo.addEventListener('error', () => resolve(null));
+  });
+}
+
+async function handleUpload(n, e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const url = URL.createObjectURL(file);
+  objectUrls[n] = url;
+  if(!meta.items[n]) meta.items[n] = {};
+  meta.items[n].name = file.name.replace(/\.[^/.]+$/, '');
+  saveMeta();
+  render();
+
+  const thumb = await captureThumbnail(url);
+  if(thumb){
+    meta.items[n].thumb = thumb;
+    saveMeta();
+    render();
+  }
+}
+
+function openPlayer(n, label){
+  const overlay = document.getElementById('playerOverlay');
+  const video = document.getElementById('playerVideo');
+  const url = objectUrls[n];
+  if(!url){
+    alert('O arquivo desse episódio não está carregado nesta sessão. Selecione o arquivo novamente.');
+    return;
+  }
+  video.src = url;
+  video.controls = false;
+  document.getElementById('playerLabel').innerText = label;
+  overlay.classList.add('open');
+  video.play();
+
+  const goFullscreen = () => {
+    const el = overlay;
+    if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  };
+  goFullscreen();
+
+  video.onended = () => {
+    if(!meta.items[n]) meta.items[n] = {};
+    meta.items[n].watched = true;
+    saveMeta();
+    render();
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    overlay.classList.remove('open');
+    video.src = '';
+  };
+}
+
+document.getElementById('playerClose').addEventListener('click', ()=>{
+  const overlay = document.getElementById('playerOverlay');
+  const video = document.getElementById('playerVideo');
+  video.pause();
+  video.src = '';
+  overlay.classList.remove('open');
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+});
+
+document.getElementById('titleField').addEventListener('blur', (e)=>{
+  meta.title = e.target.innerText.trim() || 'Meu título aqui';
+  saveMeta();
+});
+
+document.getElementById('coverSlot').addEventListener('click', (e)=>{
+  if(e.target.tagName === 'INPUT') return;
+  document.getElementById('coverSlot').querySelector('input[type=file]').click();
+});
+
+document.addEventListener('change', (e)=>{
+  if(e.target.id === 'coverInput'){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      meta.cover = reader.result; // small data URL, fine for storage
+      saveMeta();
+      render();
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+(async () => {
+  await loadMeta();
+  render();
+})();
+</script>
